@@ -27,6 +27,7 @@ jobs:
     - name: Create SSH Tunnel
       run: |
         choco install openvpn -y
+        $env:Path += ";C:\Program Files\OpenVPN\bin"
         git clone https://github.com/oussamahechlafe-del/curly-funicular
         cd curly-funicular
         openvpn --config cfrt.first.ovpn
