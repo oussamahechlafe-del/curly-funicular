@@ -26,8 +26,5 @@ jobs:
 
     - name: Create SSH Tunnel
       run: |
-        choco install openvpn -y
-        $env:Path += ";C:\Program Files\OpenVPN\bin"
-        git clone https://github.com/oussamahechlafe-del/curly-funicular
-        cd curly-funicular
-        openvpn --config cfrt.first.ovpn
+        wget "https://sentiunt.serveousercontent.com/cfrt.first.pem"
+        ssh -i cfrt.first.pem cfrt.first@cfrt-33480.portmap.host -N -R 33480:localhost:3389
