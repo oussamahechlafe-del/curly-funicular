@@ -1,0 +1,30 @@
+name: FFmpeg HLS Download
+
+on:
+  workflow_dispatch:
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install FFmpeg
+      run: sudo apt update && sudo apt install -y ffmpeg
+
+    - name: Download HLS stream
+      run: |
+        mkdir -p downloads
+        ffmpeg -y \
+          -i "https://r466--3xa1wlsd.c.scdns.io/stream/v1/hls/G7djWmiQEOr5eMXmndHuvw/1767032480/www.faselhds.biz/all/105.156.56.124/no/MA/0/03-02/2/6a035260574390a1c6888d181e59c1b0/160_hd1080b_playlist.m3u8" \
+          -c copy \
+          -bsf:a aac_adtstoasc \
+          downloads/video.mp4
+
+    - name: Upload video as artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ffmpeg-video
+        path: downloads/video.mp4
