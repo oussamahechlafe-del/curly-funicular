@@ -1,38 +1,35 @@
-name: Install and Start CRD
-on: [workflow_dispatch] # Allows you to run this manually
+name: Chrome Remote Desktop (Windows)
+
+on:
+  workflow_dispatch:
 
 jobs:
-  setup-crd:
+  crd:
     runs-on: windows-latest
+    timeout-minutes: 360
+
     steps:
-      - name: Download CRD MSI
-        shell: powershell
-        run: |
-          $msiUrl = "https://dl.google.com/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi"
-          $outPath = "$env:TEMP\chromeremotedesktophost.msi"
-          Invoke-WebRequest -Uri $msiUrl -OutFile $outPath
+    - name: Download Chrome Remote Desktop Host
+      run: |
+        Invoke-WebRequest `
+          -Uri "https://dl.google.com/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi" `
+          -OutFile "crd.msi"
 
-      - name: Install CRD Host
-        shell: powershell
-        run: |
-          $msiPath = "$env:TEMP\chromeremotedesktophost.msi"
-          # /qn for quiet/no UI, /norestart to prevent rebooting the runner
-          Start-Process msiexec.exe -ArgumentList "/i `"$msiPath`" /qn /norestart" -Wait
+    - name: Install Chrome Remote Desktop Host
+      run: |
+        msiexec /i crd.msi /quiet /norestart
 
-      - name: Register and Start Host
-        shell: powershell
-        run: |
-          $crdExe = "${Env:ProgramFiles(x86)}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
-          
-          # Variables from your request
-          $authCode = "4/0ATX87lMFHkPppnHSZRV33xVsLpo-sFtY5pjIOLUKEEcgjGsphDDZ7CNOmDM4Ryfli7FJug"
-          $pin = "123456"
-          $hostName = "compu"
+    - name: Start Chrome Remote Desktop Host
+      shell: powershell
+      run: |
+        & "${Env:PROGRAMFILES(X86)}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe" `
+          --code="4/0ATX87lMFHkPppnHSZRV33xVsLpo-sFtY5pjIOLUKEEcgjGsphDDZ7CNOmDM4Ryfli7FJug" `
+          --redirect-url="https://remotedesktop.google.com/_/oauthredirect" `
+          --name="compu" `
+          --pin="123456"
 
-          # Execute registration
-          & $crdExe --code="$authCode" `
-                    --redirect-url="https://remotedesktop.google.com/_/oauthredirect" `
-                    --name="$hostName" `
-                    --pin="$pin"
-          
-          Write-Host "CRD Host '$hostName' has been registered."
+    - name: Keep runner alive
+      run: |
+        echo "Chrome Remote Desktop is running"
+        ping -t 127.0.0.1
+s
