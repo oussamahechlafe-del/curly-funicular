@@ -1,4 +1,4 @@
-name: Chrome Remote Desktop (Windows)
+name: Chrome Remote Desktop Windows
 
 on:
   workflow_dispatch:
@@ -9,27 +9,23 @@ jobs:
     timeout-minutes: 360
 
     steps:
-    - name: Download Chrome Remote Desktop Host
-      run: |
-        Invoke-WebRequest `
-          -Uri "https://dl.google.com/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi" `
-          -OutFile "crd.msi"
+      - name: Download Chrome Remote Desktop Host
+        run: |
+          powershell -Command "Invoke-WebRequest -Uri https://dl.google.com/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi -OutFile crd.msi"
 
-    - name: Install Chrome Remote Desktop Host
-      run: |
-        msiexec /i crd.msi /quiet /norestart
+      - name: Install Chrome Remote Desktop Host
+        run: |
+          msiexec /i crd.msi /quiet /norestart
 
-    - name: Start Chrome Remote Desktop Host
-      shell: powershell
-      run: |
-        & "${Env:PROGRAMFILES(X86)}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe" `
-          --code="4/0ATX87lMFHkPppnHSZRV33xVsLpo-sFtY5pjIOLUKEEcgjGsphDDZ7CNOmDM4Ryfli7FJug" `
-          --redirect-url="https://remotedesktop.google.com/_/oauthredirect" `
-          --name="compu" `
-          --pin="123456"
+      - name: Start Chrome Remote Desktop
+        run: |
+          "%PROGRAMFILES(X86)%\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe" ^
+            --code="4/0ATX87lMFHkPppnHSZRV33xVsLpo-sFtY5pjIOLUKEEcgjGsphDDZ7CNOmDM4Ryfli7FJug" ^
+            --redirect-url="https://remotedesktop.google.com/_/oauthredirect" ^
+            --name="compu" ^
+            --pin="123456"
 
-    - name: Keep runner alive
-      run: |
-        echo "Chrome Remote Desktop is running"
-        ping -t 127.0.0.1
-s
+      - name: Keep Alive
+        run: |
+          echo Chrome Remote Desktop is running
+          timeout /t 21600
