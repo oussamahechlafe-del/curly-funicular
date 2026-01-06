@@ -1,0 +1,28 @@
+name: Run n8n
+
+on:
+  workflow_dispatch:   # manual start
+  push:
+
+jobs:
+  n8n:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install n8n
+        run: |
+          npm install -g n8n
+
+      - name: Start n8n
+        run: |
+          echo "Starting n8n..."
+          n8n start --host 0.0.0.0 --port 5678
+          ssh -o "StrictHostKeyChecking=no" -o "UserKnownHostsFile=/dev/null" -R 80:localhost:5678 serveo.net
