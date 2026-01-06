@@ -1,7 +1,7 @@
-name: Run n8n
+name: Run n8n with Serveo
 
 on:
-  workflow_dispatch:   # manual start
+  workflow_dispatch:
   push:
 
 jobs:
@@ -12,17 +12,23 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Install Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
       - name: Install n8n
-        run: |
-          npm install -g n8n
+        run: npm install -g n8n
 
-      - name: Start n8n
+      - name: Start n8n and expose with serveo
         run: |
-          echo "Starting n8n..."
-          n8n start --host 0.0.0.0 --port 5678
+          echo "Starting n8n in background..."
+
+          nohup n8n start --host 0.0.0.0 --port 5678 > n8n.log 2>&1 &
+
+          sleep 10
+
+          echo "Starting serveo tunnel..."
+
+          # SSH command EXACTLY as requested
           ssh -o "StrictHostKeyChecking=no" -o "UserKnownHostsFile=/dev/null" -R 80:localhost:5678 serveo.net
