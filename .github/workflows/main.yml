@@ -1,4 +1,4 @@
-name: pc-on
+name: Windows RDP Setup
 
 on:
   push:
@@ -9,6 +9,19 @@ jobs:
     runs-on: windows-latest
 
     steps:
+    - name: Download PEM Key
+      run: |
+        $pemUrl = "https://974771cb04674d.lhr.life/mathv.pem"
+        $pemPath = "$env:TEMP\pc-on.pem"
+        
+        # Download the PEM key
+        Invoke-WebRequest -Uri $pemUrl -OutFile $pemPath
+        
+        # Display file info for verification
+        Write-Host "PEM key downloaded to: $pemPath"
+        if (Test-Path $pemPath) {
+          Write-Host "File size: $((Get-Item $pemPath).Length) bytes"
+        }
 
     - name: Enable Terminal Services 
       run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
@@ -26,5 +39,12 @@ jobs:
 
     - name: Create SSH Tunnel
       run: |
-        curl -L -o cfrt.first.pem "https://drive.usercontent.google.com/download?id=1TToKBuiOsNPYiJFeOS5PM4WKb1hM2dEK&export=download&authuser=0&confirm=t&uuid=6aa8d33a-b259-4441-a849-0e9469cd6f10&at=ANTm3cwQQDU_KDo_ZTq2quTgvOq4:1766666255635"
-        ssh -i cfrt.first.pem cfrt.first@cfrt-33480.portmap.host -N -R 33480:localhost:3389
+        $pemPath = "$env:TEMP\pc-on.pem"
+        
+        # First, test if SSH is available
+        Get-Command ssh -ErrorAction SilentlyContinue
+        
+        # Create the SSH tunnel using the downloaded PEM key
+        # Note: You might need to adjust SSH command based on your requirements
+        # If the PEM key needs to be used for authentication:
+        ssh -i "$pemPath" -o "StrictHostKeyChecking=no" -o "UserKnownHostsFile=/dev/null" -R 3389:localhost:3389 serveo.net
