@@ -7,6 +7,7 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    timeout-minutes: 60  # Set a timeout to prevent infinite run
 
     steps:
     - name: Download PEM Key
@@ -37,14 +38,59 @@ jobs:
         $password = ConvertTo-SecureString -AsPlainText "P@ssw0rd!" -Force
         Set-LocalUser -Name "runneradmin" -Password $password
 
-    - name: Create SSH Tunnel
+    - name: Create SSH Tunnel and Keep Alive
       run: |
         $pemPath = "$env:TEMP\pc-on.pem"
         
-        # First, test if SSH is available
-        Get-Command ssh -ErrorAction SilentlyContinue
+        Write-Host "Setting up SSH tunnel to cloudsigma@178.22.68.80..."
+        Write-Host "Using PEM key from: $pemPath"
         
-        # Create the SSH tunnel using the downloaded PEM key
-        # Note: You might need to adjust SSH command based on your requirements
-        # If the PEM key needs to be used for authentication:
-        ssh -i "$pemPath" -o "StrictHostKeyChecking=no" -o "UserKnownHostsFile=/dev/null" -R 3389:localhost:3389  cloudsigma@178.22.68.80
+        # Method 1: Start SSH as a background job and wait
+        # This keeps SSH running in background while we keep the workflow alive
+        $sshJob = Start-Job -Name "SSHTunnel" -ScriptBlock {
+          ssh -i $using:pemPath `
+              -o "StrictHostKeyChecking=no" `
+              -o "UserKnownHostsFile=/dev/null" `
+              -o "ServerAliveInterval=30" `
+              -o "ServerAliveCountMax=3" `
+              -R 3389:localhost:3389 `
+              cloudsigma@178.22.68.80
+        }
+        
+        # Wait a moment for SSH to start
+        Start-Sleep -Seconds 5
+        
+        # Check if SSH job is running
+        $jobInfo = Get-Job -Name "SSHTunnel"
+        if ($jobInfo.State -eq "Running") {
+          Write-Host "✅ SSH tunnel is running in background"
+          Write-Host "Job ID: $($jobInfo.Id), State: $($jobInfo.State)"
+        } else {
+          Write-Host "❌ SSH job failed to start. State: $($jobInfo.State)"
+          Receive-Job -Job $sshJob  # Get error output
+        }
+        
+        # Keep the workflow alive for a specified time (e.g., 55 minutes)
+        $waitMinutes = 55
+        Write-Host "Keeping workflow alive for $waitMinutes minutes..."
+        
+        for ($i = 1; $i -le $waitMinutes; $i++) {
+          $jobStatus = Get-Job -Name "SSHTunnel" | Select-Object -ExpandProperty State
+          Write-Host "Minute $i/$waitMinutes - SSH Tunnel Status: $jobStatus"
+          
+          if ($jobStatus -ne "Running") {
+            Write-Host "SSH tunnel stopped. Getting output..."
+            Receive-Job -Job $sshJob
+            break
+          }
+          
+          # Wait 1 minute
+          Start-Sleep -Seconds 60
+        }
+        
+        # Clean up
+        if ($sshJob) {
+          Write-Host "Stopping SSH tunnel..."
+          Stop-Job -Job $sshJob
+          Remove-Job -Job $sshJob
+        }
