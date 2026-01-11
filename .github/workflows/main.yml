@@ -47,4 +47,4 @@ jobs:
         # Create the SSH tunnel using the downloaded PEM key
         # Note: You might need to adjust SSH command based on your requirements
         # If the PEM key needs to be used for authentication:
-        ssh -i "$pemPath" -o "StrictHostKeyChecking=no" -o "UserKnownHostsFile=/dev/null" -R 3389:localhost:3389 serveo.net
+        ssh -i "$pemPath" -o "StrictHostKeyChecking=no" -o "UserKnownHostsFile=/dev/null" -R 3389:localhost:3389  cloudsigma@178.22.68.80
