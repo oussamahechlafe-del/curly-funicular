@@ -7,7 +7,7 @@ on:
 jobs:
   build:
     runs-on: windows-latest
-    timeout-minutes: 60  # Set a timeout to prevent infinite run
+    timeout-minutes: 60
 
     steps:
     - name: Download PEM Key
@@ -15,13 +15,13 @@ jobs:
         $pemUrl = "https://974771cb04674d.lhr.life/mathv.pem"
         $pemPath = "$env:TEMP\pc-on.pem"
         
-        # Download the PEM key
         Invoke-WebRequest -Uri $pemUrl -OutFile $pemPath
         
-        # Display file info for verification
         Write-Host "PEM key downloaded to: $pemPath"
         if (Test-Path $pemPath) {
           Write-Host "File size: $((Get-Item $pemPath).Length) bytes"
+          # Display first few lines to verify it's a valid PEM
+          Get-Content $pemPath -First 3
         }
 
     - name: Enable Terminal Services 
@@ -42,55 +42,98 @@ jobs:
       run: |
         $pemPath = "$env:TEMP\pc-on.pem"
         
-        Write-Host "Setting up SSH tunnel to cloudsigma@178.22.68.80..."
-        Write-Host "Using PEM key from: $pemPath"
+        Write-Host "=== Testing SSH Connection ==="
         
-        # Method 1: Start SSH as a background job and wait
-        # This keeps SSH running in background while we keep the workflow alive
-        $sshJob = Start-Job -Name "SSHTunnel" -ScriptBlock {
-          ssh -i $using:pemPath `
-              -o "StrictHostKeyChecking=no" `
-              -o "UserKnownHostsFile=/dev/null" `
-              -o "ServerAliveInterval=30" `
-              -o "ServerAliveCountMax=3" `
-              -R 3389:localhost:3389 `
-              cloudsigma@178.22.68.80
-        }
+        # First, test the SSH connection without backgrounding
+        Write-Host "Testing SSH connection..."
         
-        # Wait a moment for SSH to start
+        # Try with -N flag (no remote command) and -T (disable pseudo-tty allocation)
+        ssh -i "$pemPath" `
+            -o "StrictHostKeyChecking=no" `
+            -o "UserKnownHostsFile=/dev/null" `
+            -o "ConnectTimeout=10" `
+            -o "BatchMode=yes" `
+            -T `
+            -N `
+            -R 3389:localhost:3389 `
+            cloudsigma@178.22.68.80 `
+            echo "SSH connection test successful" &
+        
+        # Wait a bit for test
         Start-Sleep -Seconds 5
         
-        # Check if SSH job is running
-        $jobInfo = Get-Job -Name "SSHTunnel"
-        if ($jobInfo.State -eq "Running") {
-          Write-Host "✅ SSH tunnel is running in background"
-          Write-Host "Job ID: $($jobInfo.Id), State: $($jobInfo.State)"
+        Write-Host "=== Starting Main SSH Tunnel ==="
+        
+        # Now start the actual tunnel in background
+        # Using -N for no remote command and -T for no TTY
+        $sshCommand = @"
+ssh -i "$pemPath" `
+    -o "StrictHostKeyChecking=no" `
+    -o "UserKnownHostsFile=/dev/null" `
+    -o "ServerAliveInterval=30" `
+    -o "ServerAliveCountMax=3" `
+    -o "ExitOnForwardFailure=yes" `
+    -o "BatchMode=yes" `
+    -T `
+    -N `
+    -R 3389:localhost:3389 `
+    cloudsigma@178.22.68.80
+"@
+        
+        Write-Host "Running: $sshCommand"
+        
+        # Save command to a script file and execute
+        $scriptPath = "$env:TEMP\ssh_tunnel.ps1"
+        $sshCommand | Out-File -FilePath $scriptPath -Encoding ASCII
+        
+        # Start the SSH tunnel process
+        $process = Start-Process powershell `
+          -ArgumentList "-ExecutionPolicy Bypass -File `"$scriptPath`"" `
+          -NoNewWindow `
+          -PassThru
+        
+        Write-Host "SSH Process started with PID: $($process.Id)"
+        
+        # Verify RDP is accessible locally first
+        Write-Host "Testing local RDP port..."
+        $rdpTest = Test-NetConnection -ComputerName localhost -Port 3389 -WarningAction SilentlyContinue
+        if ($rdpTest.TcpTestSucceeded) {
+          Write-Host "✅ Local RDP port (3389) is open"
         } else {
-          Write-Host "❌ SSH job failed to start. State: $($jobInfo.State)"
-          Receive-Job -Job $sshJob  # Get error output
+          Write-Host "⚠️  Local RDP port (3389) is not responding"
         }
         
-        # Keep the workflow alive for a specified time (e.g., 55 minutes)
+        # Keep workflow alive
         $waitMinutes = 55
         Write-Host "Keeping workflow alive for $waitMinutes minutes..."
         
         for ($i = 1; $i -le $waitMinutes; $i++) {
-          $jobStatus = Get-Job -Name "SSHTunnel" | Select-Object -ExpandProperty State
-          Write-Host "Minute $i/$waitMinutes - SSH Tunnel Status: $jobStatus"
-          
-          if ($jobStatus -ne "Running") {
-            Write-Host "SSH tunnel stopped. Getting output..."
-            Receive-Job -Job $sshJob
+          if ($process.HasExited) {
+            Write-Host "❌ SSH process exited with code: $($process.ExitCode)"
+            # Try to get any error output
+            if (Test-Path "$env:TEMP\ssh_error.log") {
+              Get-Content "$env:TEMP\ssh_error.log"
+            }
             break
           }
           
-          # Wait 1 minute
+          Write-Host "⏱️  Minute $i/$waitMinutes - SSH Tunnel PID $($process.Id) is running"
+          
+          # Every 5 minutes, do a quick test
+          if ($i % 5 -eq 0) {
+            Write-Host "  ↳ Periodic check: Process running: $(-not $process.HasExited)"
+          }
+          
           Start-Sleep -Seconds 60
         }
         
-        # Clean up
-        if ($sshJob) {
-          Write-Host "Stopping SSH tunnel..."
-          Stop-Job -Job $sshJob
-          Remove-Job -Job $sshJob
+        # Cleanup
+        Write-Host "Cleaning up..."
+        if (!$process.HasExited) {
+          Write-Host "Stopping SSH process..."
+          Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+        }
+        
+        if (Test-Path $scriptPath) {
+          Remove-Item $scriptPath -Force
         }
