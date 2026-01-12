@@ -1,71 +1,59 @@
-name: Ubuntu GUI (noVNC) + Serveo tunnel
+- name: Install GUI + VNC + noVNC + deps
+  run: |
+    sudo apt-get update
+    sudo apt-get install -y --no-install-recommends \
+      xfce4 xfce4-terminal xfce4-session xfwm4 \
+      dbus-x11 x11-xserver-utils x11-utils \
+      xterm xauth \
+      tigervnc-standalone-server tigervnc-common tigervnc-tools \
+      novnc websockify openssh-client autossh curl
 
-on:
-  workflow_dispatch:
+    mkdir -p ~/.vnc
 
-jobs:
-  gui:
-    runs-on: ubuntu-latest
-    timeout-minutes: 360
+- name: Create VNC password
+  run: |
+    VNC_PASS="12345678"
+    printf "%s\n%s\n\n" "$VNC_PASS" "$VNC_PASS" | vncpasswd
+    chmod 600 ~/.vnc/passwd
 
-    steps:
-      - name: Install GUI + VNC + noVNC + SSH tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            xfce4 xfce4-terminal dbus-x11 x11-xserver-utils \
-            tigervnc-standalone-server tigervnc-common tigervnc-tools \
-            novnc websockify openssh-client autossh curl
-          command -v vncpasswd || true
-          mkdir -p ~/.vnc
+- name: Start XFCE VNC desktop (robust xstartup)
+  run: |
+    cat > ~/.vnc/xstartup <<'EOF'
+    #!/bin/sh
+    set -e
 
-      - name: Create VNC password (TigerVNC)
-        run: |
-          # change this password if you want
-          VNC_PASS="12345678"
+    unset SESSION_MANAGER
+    unset DBUS_SESSION_BUS_ADDRESS
 
-          if ! command -v vncpasswd >/dev/null 2>&1; then
-            echo "ERROR: vncpasswd not found even after install."
-            exit 1
-          fi
+    export XDG_SESSION_TYPE=x11
+    export XDG_CURRENT_DESKTOP=XFCE
+    export XDG_RUNTIME_DIR="/tmp/xdg-runtime-$USER"
+    mkdir -p "$XDG_RUNTIME_DIR"
+    chmod 700 "$XDG_RUNTIME_DIR"
 
-          printf "%s\n%s\n\n" "$VNC_PASS" "$VNC_PASS" | vncpasswd
-          chmod 600 ~/.vnc/passwd
+    # Start a dbus session if possible
+    if command -v dbus-launch >/dev/null 2>&1; then
+      eval "$(dbus-launch --sh-syntax)"
+    fi
 
-      - name: Start XFCE VNC desktop in background
-        run: |
-          cat > ~/.vnc/xstartup <<'EOF'
-          #!/bin/sh
-          unset SESSION_MANAGER
-          unset DBUS_SESSION_BUS_ADDRESS
-          startxfce4 &
-          EOF
-          chmod +x ~/.vnc/xstartup
+    # Some runners need this
+    xsetroot -solid grey || true
 
-          vncserver -kill :1 >/dev/null 2>&1 || true
-          vncserver :1 -geometry 1280x720 -depth 24
+    # Start XFCE (fallback to xterm if it fails)
+    (startxfce4 >/tmp/vnc-xfce.log 2>&1) || (xterm >/tmp/vnc-xterm.log 2>&1)
+    EOF
 
-          vncserver -list
+    chmod +x ~/.vnc/xstartup
 
-      - name: Start noVNC on port 6080 in background
-        run: |
-          nohup websockify --web=/usr/share/novnc/ 6080 localhost:5901 \
-            > novnc.log 2>&1 &
+    vncserver -kill :1 >/dev/null 2>&1 || true
 
-          for i in {1..30}; do
-            if curl -fsS http://127.0.0.1:6080/ >/dev/null; then
-              echo "noVNC is up on :6080"
-              break
-            fi
-            sleep 1
-          done
+    # Clean stale files
+    rm -f ~/.vnc/*.pid ~/.vnc/*.log || true
 
-      - name: Start Serveo reverse tunnel (keeps job alive)
-        run: |
-          echo "Opening Serveo tunnel: https://serveo.net -> localhost:6080"
-          autossh -M 0 -N \
-            -o "ServerAliveInterval=30" \
-            -o "ServerAliveCountMax=3" \
-            -o "StrictHostKeyChecking=no" \
-            -o "UserKnownHostsFile=/dev/null" \
-            -R 80:localhost:6080 serveo.net
+    # Start VNC
+    vncserver :1 -geometry 1280x720 -depth 24
+
+    echo "==== VNC LOG ===="
+    ls -la ~/.vnc || true
+    tail -n +1 ~/.vnc/*.log || true
+s
