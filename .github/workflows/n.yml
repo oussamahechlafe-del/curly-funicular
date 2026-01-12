@@ -2,7 +2,6 @@ name: Ubuntu GUI (noVNC) + Serveo tunnel
 
 on:
   workflow_dispatch:
-  push:
 
 jobs:
   gui:
@@ -15,14 +14,21 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             xfce4 xfce4-terminal dbus-x11 x11-xserver-utils \
-            tigervnc-standalone-server tigervnc-common \
+            tigervnc-standalone-server tigervnc-common tigervnc-tools \
             novnc websockify openssh-client autossh curl
+          command -v vncpasswd || true
           mkdir -p ~/.vnc
 
-      - name: Create VNC password (required by TigerVNC)
+      - name: Create VNC password (TigerVNC)
         run: |
           # change this password if you want
           VNC_PASS="12345678"
+
+          if ! command -v vncpasswd >/dev/null 2>&1; then
+            echo "ERROR: vncpasswd not found even after install."
+            exit 1
+          fi
+
           printf "%s\n%s\n\n" "$VNC_PASS" "$VNC_PASS" | vncpasswd
           chmod 600 ~/.vnc/passwd
 
@@ -32,26 +38,20 @@ jobs:
           #!/bin/sh
           unset SESSION_MANAGER
           unset DBUS_SESSION_BUS_ADDRESS
-          xrdb $HOME/.Xresources 2>/dev/null || true
           startxfce4 &
           EOF
           chmod +x ~/.vnc/xstartup
 
-          # Start VNC on :1 (5901) in background
           vncserver -kill :1 >/dev/null 2>&1 || true
           vncserver :1 -geometry 1280x720 -depth 24
 
-          # Quick check
           vncserver -list
 
       - name: Start noVNC on port 6080 in background
         run: |
-          # TigerVNC is on localhost:5901 (display :1)
-          # noVNC will listen on 0.0.0.0:6080 and proxy to 5901
           nohup websockify --web=/usr/share/novnc/ 6080 localhost:5901 \
             > novnc.log 2>&1 &
 
-          # Wait until the port is up
           for i in {1..30}; do
             if curl -fsS http://127.0.0.1:6080/ >/dev/null; then
               echo "noVNC is up on :6080"
@@ -63,7 +63,6 @@ jobs:
       - name: Start Serveo reverse tunnel (keeps job alive)
         run: |
           echo "Opening Serveo tunnel: https://serveo.net -> localhost:6080"
-          # If autossh is available, it helps auto-reconnect
           autossh -M 0 -N \
             -o "ServerAliveInterval=30" \
             -o "ServerAliveCountMax=3" \
